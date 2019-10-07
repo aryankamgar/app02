@@ -1,0 +1,258 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "vmName": {
+            "type": "string"
+        },
+        "vmNameIterate": {
+            "type": "int",
+            "metadata": {
+                "description": "Number used to append at the end of the VMs, which increases with each VM deployment"
+            }
+        },
+        "vmSku": {
+            "type": "string"
+        },
+        "vmCount": {
+            "type": "int",
+            "metadata": {
+                "description": "Number of VM instances"
+            }
+        },
+        "workspaceId": {
+            "type": "string",
+            "defaultValue": "fce3ef39-17ad-404f-86a5-d2bc8688f01a",
+            "metadata": {
+                "description": "Workspace ID of the OMS workspace"
+            }
+        },
+        "adminUsername": {
+            "type": "string",
+            "defaultValue": "CloudOps",
+            "metadata": {
+                "description": "Admin username of the instance"
+            }
+        },
+        "adminPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Admin password on all VMs"
+            }
+        },
+        "workspaceKey": {
+            "type": "string",
+            "defaultValue": "1gfK9m9W/FC47mXpncJ5x6kIqRBnZqF/y0OeDdg4H+9y/ABVf93pPOLltalSy4X6ekuclfNoLB9lEA18Y3ogQg==",
+            "metadata": {
+                "description": "Workspace key of the OMS workspace, will be referenced from keyvault"
+            }
+        },
+        "bootDiagnosticsStorageUri": {
+            "type": "string",
+            "defaultValue": "apppframeworklabrgdiag",
+            "metadata": {
+                "description": "Boot diagnostic storage account name"
+            }
+        },
+        "vnetName": {
+            "type": "string",
+            "defaultValue": "lab-inf-caest-vnet01",
+            "metadata": {
+                "description": "Name of the Virtual Network"
+            }
+        },
+        "subnetName": {
+            "type": "string",
+            "defaultValue": "web-tier-lab",
+            "metadata": {
+                "description": "Name of the Subnet"
+            }
+        },
+        "vnetResourceGroupName": {
+            "type": "string",
+            "defaultValue": "lab-network-rg",
+            "metadata": {
+                "description": "Name of Resource Group in which the vnet is hosted"
+            }
+        },
+        "appName": {
+            "type": "string",
+            "defaultValue": "notset"
+        },
+        "appId": {
+            "type": "string",
+            "defaultValue": "notset"
+        },
+        "appOwner": {
+            "type": "string",
+            "defaultValue": "notset"
+        },
+        "projectId": {
+            "type": "string",
+            "defaultValue": "notset"
+        },
+        "env": {
+            "type": "string",
+            "defaultValue": "notset"
+        },
+        "businessunit": {
+            "type": "string",
+            "defaultValue": "notset"
+        },
+        "cloudProvider": {
+            "type": "string",
+            "defaultValue": "notset"
+        },
+        "costcenter": {
+            "type": "string",
+            "defaultValue": "notset"
+        }
+    },
+    "variables": {
+        "availabilitySetName": "[concat(parameters('vmName'), 'availabilityset')]",
+        "subnetRef": "[resourceId(parameters('vnetResourceGroupName'),'Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters ('subnetName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "name": "[concat(parameters('vmName'),copyIndex(parameters('vmNameIterate')),'/','OMSExtension')]",
+            "apiVersion": "2018-06-01",
+            "location": "[resourceGroup().location]",
+            "copy": {
+                "name": "LogAnalyticsExtensionCopy",
+                "count": "[parameters('vmCount')]"
+            },
+            "metadata": {
+                "description": "the dependsOn value can be specified at the master template"
+            },
+            "properties": {
+                "publisher": "Microsoft.EnterpriseCloud.Monitoring",
+                "type": "OmsAgentForLinux",
+                "typeHandlerVersion": "1.7",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "workspaceId": "[parameters('workspaceId')]"
+                },
+                "protectedSettings": {
+                    "workspaceKey": "[parameters('workspaceKey')]"
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines', concat(parameters('vmName'), copyIndex(parameters('vmNameIterate'))))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/availabilitySets",
+            "name": "[variables('availabilitySetName')]",
+            "apiVersion": "2016-04-30-preview",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "appid": "[parameters('appId')]",
+                "appname": "[parameters('appName')]",
+                "appowner": "[parameters('appOwner')]",
+                "projectid": "[parameters('projectId')]",
+                "env": "[parameters('env')]",
+                "businessunit": "[parameters('businessunit')]",
+                "costcenter": "[parameters('costcenter')]",
+                "provider": "[parameters('cloudProvider')]"
+            },
+            "properties": {
+                "platformUpdateDomainCount": 2,
+                "platformFaultDomainCount": 2
+            },
+            "sku": {
+                "name": "Aligned"
+            }
+        },
+        {
+            "apiVersion": "2015-06-15",
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[concat(parameters('vmName'),copyIndex(parameters('vmNameIterate')),'-nic')]",
+            "location": "[resourceGroup().location]",
+            "copy": {
+                "name": "nicCopy",
+                "count": "[parameters('vmCount')]"
+            },
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "[concat(parameters('vmName'),copyIndex(parameters('vmNameIterate')),'-nic','-ipconfig')]",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[variables('subnetRef')]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2018-10-01",
+            "name": "[concat(parameters('vmName'), copyIndex(parameters('vmNameIterate')))]",
+            "location": "[resourceGroup().location]",
+            "plan": {
+                "name": "rhel-lvm76",
+                "product": "rhel-byos",
+                "publisher": "redhat"
+            },
+            "copy": {
+                "name": "vmCopy",
+                "count": "[parameters('vmCount')]"
+            },
+            "properties": {
+                "availabilitySet": {
+                    "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('availabilitySetName'))]"
+                },
+                "hardwareProfile": {
+                    "vmSize": "[parameters('vmSku')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "id": "/subscriptions/f84a1d75-9f84-4bda-8b6f-53d25c20034a/resourceGroups/cloudops-ark/providers/Microsoft.Compute/images/rhel76-byos"
+                    },
+                    "osDisk": {
+                        "osType": "Linux",
+                        "name": "[concat(parameters('vmName'), copyIndex(parameters('vmNameIterate')), '-osd')]",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Premium_LRS"
+                        },
+                        "diskSizeGB": 128
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[parameters('vmName')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "linuxConfiguration": {
+                        "disablePasswordAuthentication": false,
+                        "provisionVMAgent": true
+                    },
+                    "secrets": [],
+                    "allowExtensionOperations": true
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('vmName'),copyIndex(parameters('vmNameIterate')),'-nic'))]"
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[concat('https://', parameters('bootDiagnosticsStorageUri'), '.blob.core.windows.net')]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/availabilitySets', variables('availabilitySetName'))]",
+                "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('vmName'),copyIndex(parameters('vmNameIterate')),'-nic'))]"
+            ]
+        }
+    ]
+}
